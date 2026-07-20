@@ -1,0 +1,125 @@
+{
+  "magic": "E!vIA5L86J2I",
+  "timestamp": "2020-01-15T00:00:00+00:00",
+  "repo": "mockorg/mockrepo",
+  "labels": [
+    {
+      "name": "bug",
+      "description": null,
+      "color": "fc2929"
+    },
+    {
+      "name": "enhancement",
+      "description": null,
+      "color": "84b6eb"
+    }
+  ],
+  "issues": [
+    {
+      "number": 1,
+      "id": "issue-1",
+      "title": "First issue",
+      "url": "https://example.invalid/mockorg/mockrepo/issues/1",
+      "state": "CLOSED",
+      "author": "alice",
+      "authorAssociation": "OWNER",
+      "assignees": [],
+      "labels": [],
+      "body": "First issue",
+      "createdAt": "2020-01-01T00:00:00Z",
+      "updatedAt": "2020-01-02T00:00:00Z",
+      "closedAt": "2020-01-02T00:00:00Z",
+      "comments": [
+        {
+          "author": "bob",
+          "authorAssociation": "CONTRIBUTOR",
+          "body": "Fixed.",
+          "createdAt": "2020-01-02T00:00:00Z",
+          "updatedAt": "2020-01-02T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "id": "issue-2",
+      "title": "Second issue",
+      "url": "https://example.invalid/mockorg/mockrepo/issues/2",
+      "state": "OPEN",
+      "author": "bob",
+      "authorAssociation": "CONTRIBUTOR",
+      "assignees": [
+        "alice"
+      ],
+      "labels": [
+        "bug"
+      ],
+      "body": "Second issue",
+      "createdAt": "2020-01-03T00:00:00Z",
+      "updatedAt": "2020-01-04T00:00:00Z",
+      "closedAt": null,
+      "comments": []
+    },
+    {
+      "number": 3,
+      "id": "issue-3",
+      "title": "Third issue",
+      "url": "https://example.invalid/mockorg/mockrepo/issues/3",
+      "state": "CLOSED",
+      "author": "alice",
+      "authorAssociation": "OWNER",
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "body": "Third issue",
+      "createdAt": "2020-01-05T00:00:00Z",
+      "updatedAt": "2020-01-06T00:00:00Z",
+      "closedAt": "2020-01-06T00:00:00Z",
+      "comments": []
+    }
+  ],
+  "pulls": [
+    {
+      "number": 101,
+      "id": "pr-101",
+      "title": "Merged change",
+      "url": "https://example.invalid/mockorg/mockrepo/pull/101",
+      "state": "MERGED",
+      "author": "dave",
+      "authorAssociation": "CONTRIBUTOR",
+      "assignees": [],
+      "labels": [],
+      "body": "A merged pull request.",
+      "createdAt": "2020-01-10T00:00:00Z",
+      "updatedAt": "2020-01-11T00:00:00Z",
+      "baseRepository": "mockorg/mockrepo",
+      "baseRefName": "master",
+      "baseRefOid": "1111111111111111111111111111111111111111",
+      "headRepository": "dave/mockrepo",
+      "headRefName": "feature",
+      "headRefOid": "2222222222222222222222222222222222222222",
+      "closedAt": "2020-01-11T00:00:00Z",
+      "mergedAt": "2020-01-11T00:00:00Z",
+      "mergedBy": "alice",
+      "mergeCommit": {
+        "oid": "3333333333333333333333333333333333333333"
+      },
+      "comments": [],
+      "reviews": [
+        {
+          "id": "review-1",
+          "commit": {
+            "abbreviatedOid": "2222222"
+          },
+          "author": "alice",
+          "authorAssociation": "OWNER",
+          "state": "APPROVED",
+          "body": "Looks good.",
+          "createdAt": "2020-01-10T12:00:00Z",
+          "updatedAt": "2020-01-10T12:00:00Z",
+          "comments": []
+        }
+      ]
+    }
+  ]
+}

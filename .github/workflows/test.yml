@@ -1,7 +1,5 @@
 name: Run basic acceptance testing
 on: [push]
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   test:

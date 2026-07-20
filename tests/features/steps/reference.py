@@ -2,59 +2,6 @@ from behave import *
 import subprocess
 import os
 import json
-import time
-
-@given('a repo for "{repo}"')
-def step_impl(context, repo):
-    repo_dir = context.tempdir.name + "/repo"
-    if not os.path.exists(repo_dir):
-        checkout = subprocess.run(
-            ["git", "clone", "https://github.com/" + repo, repo_dir]
-        )
-        checkout.check_returncode()
-    context.repo_dir = repo_dir
-
-
-@given('the output of the last tagged version for "{repo}"')
-def step_impl(context, repo):
-    filename = context.tempdir.name + "/known_good.json"
-
-    if not os.path.exists(filename):
-        build_virtualenv = subprocess.run(
-            ["virtualenv", "-p", "python3", context.tempdir.name + "/venv" ]
-        )
-        build_virtualenv.check_returncode()
-        python = context.tempdir.name + "/venv/bin/python"
-
-        install_good_version = subprocess.run(
-            [python, "-m", "pip", "install", "archive-repo"]
-        )
-        install_good_version.check_returncode()
-
-        last_version_run = subprocess.run(
-            [python, "-m", "archive-repo", "archive", repo, os.environ["GH_TOKEN"], filename],
-            text=True,
-        )
-        last_version_run.check_returncode()
-
-
-@when('the current script is called on "{repo}"')
-def step_impl(context, repo):
-    filename = context.tempdir.name + "/current.json"
-    if not os.path.exists(filename):
-        this_version_run = subprocess.run(
-            ["python3", "-m", "archive-repo", "archive", repo, os.environ["GH_TOKEN"], filename]
-        )
-        this_version_run.check_returncode()
-
-
-@when('pr-branches is executed for "{repo}"')
-def step_impl(context, repo):
-    filename = context.tempdir.name + "/current.json"
-    pr_branches_run = subprocess.run(
-        ["python3", "-m", "archive-repo", "pr_branches", filename, repo, context.repo_dir]
-    )
-    pr_branches_run.check_returncode()
 
 
 def read_temp_file(context, name):
@@ -63,20 +10,35 @@ def read_temp_file(context, name):
         return json.load(read)
 
 
-@then("the output is a superset of the last version")
+def run_archive(context, args, capture_output=False):
+    command = [
+        "python3",
+        "-m",
+        "archive-repo",
+        "archive",
+        context.repo,
+        "fake-token",
+    ] + args
+    result = subprocess.run(command, capture_output=capture_output, text=capture_output)
+    result.check_returncode()
+    return result
+
+
+@given("the known-good baseline output is available")
 def step_impl(context):
-    # Everything found in known_good must also appear current_result, except:
-    # - Timestamp will change
-    # - Magic may differ
-    assert check_subset(
-        read_temp_file(context, "known_good"),
-        read_temp_file(context, "current"),
-        exclude=["magic", "timestamp"],
-    )
+    context.reference = "tests/content/mock_known_good.json"
 
 
-# Checks that everything in first occurs in second, except for the top-level keys in exclude
-# If require_equal is set, everything in second also occurs in first.
+@when("the current script is called on the mock repo")
+def step_impl(context):
+    filename = context.tempdir.name + "/current.json"
+    if not os.path.exists(filename):
+        run_archive(context, [filename])
+
+
+# Checks that everything in first occurs in second, except for the top-level
+# keys in exclude. If mutual is set, everything in second also occurs in
+# first (i.e. the two are equivalent modulo the excluded keys).
 def check_subset(first, second, exclude=[], mutual=False):
     if type(first) != type(second):
         return False
@@ -102,52 +64,50 @@ def check_subset(first, second, exclude=[], mutual=False):
         return first == second
 
 
+@then("the output is a superset of the known-good baseline")
+def step_impl(context):
+    with open(context.reference) as f:
+        known_good = json.load(f)
+    # Everything in the frozen baseline must also appear in today's output,
+    # except: timestamp always changes, and magic may too.
+    assert check_subset(
+        known_good,
+        read_temp_file(context, "current"),
+        exclude=["magic", "timestamp"],
+    )
+
+
 @given("the {ref_type} file is available")
 def step_impl(context, ref_type):
-    # These reference files are explicitly included
     if ref_type == "Stale":
-        context.reference = "tests/content/h2c_stale.json"
+        context.reference = "tests/content/mock_stale.json"
     elif ref_type == "Legacy":
-        context.reference = "tests/content/h2c_legacy.json"
-    # These reference files are created
+        context.reference = "tests/content/mock_legacy.json"
     elif ref_type == "Wrong repo":
-        filename = context.tempdir.name + "/quic.json"
-        os.system(
-            "sed 's/MikeBishop\/http2-certs/quicwg\/base-drafts/' tests/content/h2c_stale.json > "
-            + filename
-        )
-        context.reference = filename
+        with open("tests/content/mock_stale.json") as f:
+            data = json.load(f)
+        data["repo"] = "someone-else/other-repo"
+        context.reference = context.tempdir.name + "/wrong_repo.json"
+        with open(context.reference, "w") as f:
+            json.dump(data, f)
     elif ref_type == "Invalid magic":
-        filename = context.tempdir.name + "/oogabooga.json"
-        os.system(
-            "sed 's/B8n2c@e8kvfx/00gaB00GA!/' tests/content/h2c_legacy.json > "
-            + filename
-        )
-        context.reference = filename
+        with open("tests/content/mock_legacy.json") as f:
+            data = json.load(f)
+        data["magic"] = "not-a-real-magic-value"
+        context.reference = context.tempdir.name + "/invalid_magic.json"
+        with open(context.reference, "w") as f:
+            json.dump(data, f)
 
 
-@when('the script is called on "{repo}" with the reference file')
-def step_impl(context, repo):
-    context.execute_steps('When the current script is called on "' + repo + '"')
+@when("the script is called on the mock repo with the reference file")
+def step_impl(context):
+    context.execute_steps("When the current script is called on the mock repo")
     assert os.path.exists(context.reference)
-    run_with_ref = subprocess.run(
-        [
-            "python3",
-            "-m",
-            "archive-repo",
-            "archive",
-            repo,
-            os.environ["GH_TOKEN"],
-            "--reference",
-            context.reference,
-        ],
-        capture_output=True,
-        text=True,
+    result = run_archive(
+        context, ["--reference", context.reference], capture_output=True
     )
-    run_with_ref.check_returncode()
-
-    context.result = json.loads(run_with_ref.stdout)
-    context.output = run_with_ref.stderr
+    context.result = json.loads(result.stdout)
+    context.output = result.stderr
 
 
 @then("the output is the same")
@@ -164,14 +124,3 @@ def step_impl(context):
 def step_impl(context, error):
     if error != "None":
         assert error in context.output
-
-
-@then('a branch named "{branch}" pointing to "{hash}" is created')
-def step_impl(context, branch, hash):
-    git_commit = subprocess.run(
-        ["git", "-C", context.repo_dir, "show-ref", "-s", "refs/heads/" + branch],
-        capture_output=True,
-        text=True,
-    )
-    git_commit.check_returncode()
-    assert hash in git_commit.stdout

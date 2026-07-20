@@ -8,23 +8,26 @@ Feature: Repository archival
     reference; working from a stale file, a legacy file, or no file does not
     change the final output.
 
-    Scenario: Raw download
-        Given the output of the last tagged version for "MikeBishop/http2-certs"
-        When the current script is called on "MikeBishop/http2-certs"
-        Then the output is a superset of the last version
+    All scenarios run against a local stand-in for the GitHub GraphQL API
+    (see tests/features/steps/mock_github.py), not a live repository.
 
-    Scenario Outline:  Reference files
+    Scenario: Raw download
+        Given the known-good baseline output is available
+        When the current script is called on the mock repo
+        Then the output is a superset of the known-good baseline
+
+    Scenario Outline: Reference files
         Given the <Reference Type> file is available
-        When the script is called on "MikeBishop/http2-certs" with the reference file
+        When the script is called on the mock repo with the reference file
         Then the output is the same
         But the error "<error>" is found on stderr
 
       Examples: Valid reference files
       | Reference Type     | error |
-      | Stale              | None  |
-      | Legacy             | None  |
+      | Stale               | None  |
+      | Legacy              | None  |
 
       Examples: Invalid reference files
       | Reference Type     | error                            |
-      | Wrong repo         | different repo                   |
-      | Invalid magic      | does not appear to be generated  |
+      | Wrong repo          | different repo                   |
+      | Invalid magic       | does not appear to be generated  |
