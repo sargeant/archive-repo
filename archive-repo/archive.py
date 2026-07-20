@@ -739,7 +739,14 @@ def do_archive(full_repo, token, refFile, outFile=None, issuesOnly=False):
 
     ## Read in the reference files, if any
     reference = upgradeReference(archive_reference.loadReference(refFile, full_repo))
-    reference.canCopy = bool(reference.issues) and bool(reference.prs or issuesOnly)
+    # Only short-circuit to a raw file copy if doing so wouldn't change whether
+    # the output includes "pulls" data (issuesOnly must agree with the
+    # reference's own issues_only state, or a copy would leak/drop PR data).
+    reference.canCopy = (
+        bool(reference.issues)
+        and bool(reference.prs or issuesOnly)
+        and (not issuesOnly or reference.issues_only)
+    )
 
     ## Download from GitHub the full issues list (if no reference) or the updated issues list (if reference)
     getIssues(owner, repo, reference)
