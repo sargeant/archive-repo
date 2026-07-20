@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
+import subprocess
 import sys
 from .shared import archive_reference
 
@@ -41,18 +41,19 @@ def generate_branches(input, repo, merged, git_dir=".", dryRun=False):
         if merged
         else (pr for pr in reference.prs.values() if pr["state"] != "MERGED")
     )
-    commits = {pr["headRefOid"] + ":pulls/" + str(pr["number"]) for pr in target_prs}
+    refspecs = {pr["headRefOid"] + ":pulls/" + str(pr["number"]) for pr in target_prs}
 
-    if any(commits):
-        output = list()
-        output.append("https://github.com/" + repo)
-        output.extend(commits)
-        command = "git -C " + git_dir + " fetch "
-        command += "--dry-run " if dryRun else ""
-        command += " ".join(output)
-        os.system(command)
-    else:
+    if not refspecs:
         print("Nothing to do")
+        return
+
+    command = ["git", "-C", git_dir, "fetch"]
+    if dryRun:
+        command.append("--dry-run")
+    command.append("https://github.com/" + repo)
+    command.extend(refspecs)
+
+    subprocess.run(command).check_returncode()
 
 
 if __name__ == "__main__":
