@@ -431,12 +431,12 @@ query($owner: String!, $repo: String!, $cursor: String!) {
 
 
 last_request_limit = 5000
-next_reset_time = datetime.now()
+next_reset_time = datetime.now(timezone.utc)
 
 
-def stall_until(time):
-    time_to_sleep = time - datetime.now().timestamp() + 1
-    print("GitHub API rate-limited; waiting for" + str(time_to_sleep) + "seconds")
+def stall_until(reset_time):
+    time_to_sleep = (reset_time - datetime.now(timezone.utc)).total_seconds() + 1
+    print(f"GitHub API rate-limited; waiting for {time_to_sleep} seconds")
     time.sleep(time_to_sleep)
 
 
@@ -471,7 +471,7 @@ def submit_query(query, variables, display):
             and result["errors"]["type"] == "RATE_LIMITED"
         ):
             # We're rate-limited; STALL
-            if next_reset_time > datetime.now():
+            if next_reset_time > datetime.now(timezone.utc):
                 stall_until(next_reset_time)
             else:
                 # We haven't made a successful request, so we don't know how long to sleep.
