@@ -547,23 +547,84 @@ def log(*str, **kwargs):
         eprint(*str, **kwargs)
 
 
-def getIssues(owner, repo, refFile, fields=gql_Issue_Fields, updateOld=False):
-    issue_cursor = None
-    get_more_issues = True
+def shapeIssue(issue):
+    "Normalize a raw issue node from GraphQL into the archive's flat format."
+    number = issue["number"]
 
-    while get_more_issues:
-        if issue_cursor is None:
+    # Are the comments on this issue complete?
+    followPagination(
+        issue,
+        "comments",
+        gql_Issue_Comments_Query,
+        f"additional comments on issue #{number}",
+    )
+
+    # Collapse some nodes
+    collapse_map(issue, "author", "login")
+    collapse_single(issue, "labels", "name")
+    collapse_single(issue, "assignees", "login")
+    collapse(issue, "comments")
+    for comment in issue.get("comments", []):
+        collapse_map(comment, "author", "login")
+
+
+def shapePR(pr):
+    "Normalize a raw PR node from GraphQL into the archive's flat format."
+    number = pr["number"]
+
+    # Issues only have comments; PRs have both comments and reviews,
+    # and reviews themselves have comments.
+    followPagination(
+        pr,
+        "comments",
+        gql_PR_Comments_Query,
+        f"additional comments on PR#{number}",
+    )
+    followPagination(
+        pr, "reviews", gql_PR_Review_Query, f"additional reviews on PR#{number}"
+    )
+
+    for review in pr.get("reviews", {}).get("nodes", {}):
+        followPagination(
+            review,
+            "comments",
+            gql_PR_ReviewComments_Query,
+            f"additional review comments on PR#{number}",
+        )
+
+    # Collapse some nodes
+    collapse_map(pr, "author", "login")
+    collapse_map(pr, "mergedBy", "login")
+    collapse_single(pr, "labels", "name")
+    collapse_map(pr, "baseRepository", "nameWithOwner")
+    collapse_map(pr, "headRepository", "nameWithOwner")
+    collapse_single(pr, "assignees", "login")
+    collapse(pr, "comments")
+    for comment in pr.get("comments", []):
+        collapse_map(comment, "author", "login")
+    collapse(pr, "reviews")
+    for review in pr.get("reviews", []):
+        collapse_map(review, "author", "login")
+        collapse(review, "comments")
+
+
+def getIssues(owner, repo, refFile, fields=gql_Issue_Fields):
+    cursor = None
+    get_more = True
+
+    while get_more:
+        if cursor is None:
             # Initial issue fetch
             query = gql_AllIssues_First
             variables = {"owner": owner, "repo": repo}
-            if not updateOld and refFile.lastSuccess:
+            if refFile.lastSuccess:
                 variables["filters"] = {"since": refFile.lastSuccess.isoformat()}
                 query = gql_UpdatedIssues_First
         else:
             # Fetching more issues
             query = gql_AllIssues_Subsequent
-            variables = {"owner": owner, "repo": repo, "cursor": issue_cursor}
-            if refFile.lastSuccess and not updateOld:
+            variables = {"owner": owner, "repo": repo, "cursor": cursor}
+            if refFile.lastSuccess:
                 variables["filters"] = {"since": refFile.lastSuccess.isoformat()}
                 query = gql_UpdatedIssues_Subsequent
 
@@ -573,56 +634,28 @@ def getIssues(owner, repo, refFile, fields=gql_Issue_Fields, updateOld=False):
         issues = data["repository"]["issues"]
 
         for issue in issues["nodes"]:
-            number = issue["number"]
-
-            if updateOld and number not in refFile.issues:
-                continue
-
-            # Are the comments on this issue complete?
-            followPagination(
-                issue,
-                "comments",
-                gql_Issue_Comments_Query,
-                f"additional comments on issue #{number}",
-            )
-
-            # Collapse some nodes
-            collapse_map(issue, "author", "login")
-            collapse_single(issue, "labels", "name")
-            collapse_single(issue, "assignees", "login")
-            collapse(issue, "comments")
-            for comment in issue.get("comments", []):
-                collapse_map(comment, "author", "login")
-
-            # Delete the old instance; add this instance
-            if not updateOld and number in refFile.issues:
-                del refFile.issues[number]
-
-            if number in refFile.issues:
-                refFile.issues[number].update(issue)
-            else:
-                refFile.issues[number] = issue
-
+            shapeIssue(issue)
+            refFile.issues[issue["number"]] = issue
             refFile.canCopy = False
 
-        get_more_issues = issues["pageInfo"]["hasNextPage"]
-        issue_cursor = issues["pageInfo"]["endCursor"]
+        get_more = issues["pageInfo"]["hasNextPage"]
+        cursor = issues["pageInfo"]["endCursor"]
 
 
-def getPRs(owner, repo, refFile, fields=gql_PullRequest_Fields, updateOld=False):
-    issue_cursor = None
-    get_more_issues = True
+def getPRs(owner, repo, refFile, fields=gql_PullRequest_Fields):
+    cursor = None
+    get_more = True
 
     # Since PRs can't be filtered by their update time, we retrieve
     # them in update-time order and cut off pagination once we're
     # older than the reference file.
 
-    while get_more_issues:
+    while get_more:
         query = gql_AllPRs_Initial
         variables = {"owner": owner, "repo": repo}
-        if issue_cursor is not None:
+        if cursor is not None:
             query = gql_AllPRs_Subsequent
-            variables["cursor"] = issue_cursor
+            variables["cursor"] = cursor
 
         data = submit_query(query + fields, variables, "pull requests")
 
@@ -633,68 +666,90 @@ def getPRs(owner, repo, refFile, fields=gql_PullRequest_Fields, updateOld=False)
             number = pr["number"]
 
             # Since we can't filter, check if we already have this one.
-            if not updateOld:
-                if number in refFile.prs:
-                    ref_updatedAt = dp.parse(refFile.prs[number]["updatedAt"])
-                    dl_updatedAt = dp.parse(pr["updatedAt"])
-                    if ref_updatedAt >= dl_updatedAt:
-                        continue
-            elif number not in refFile.prs:
-                continue
+            if number in refFile.prs:
+                ref_updatedAt = dp.parse(refFile.prs[number]["updatedAt"])
+                dl_updatedAt = dp.parse(pr["updatedAt"])
+                if ref_updatedAt >= dl_updatedAt:
+                    continue
 
-            # Issues only have comments; PRs have both comments and reviews,
-            # and reviews themselves have comments.
-            followPagination(
-                pr,
-                "comments",
-                gql_PR_Comments_Query,
-                f"additional comments on PR#{number}",
-            )
-            followPagination(
-                pr, "reviews", gql_PR_Review_Query, f"additional reviews on PR#{number}"
-            )
-
-            for review in pr.get("reviews", {}).get("nodes", {}):
-                followPagination(
-                    review,
-                    "comments",
-                    gql_PR_ReviewComments_Query,
-                    f"additional review comments on PR#{number}",
-                )
-
-            # Collapse some nodes
-            collapse_map(pr, "author", "login")
-            collapse_map(pr, "mergedBy", "login")
-            collapse_single(pr, "labels", "name")
-            collapse_map(pr, "baseRepository", "nameWithOwner")
-            collapse_map(pr, "headRepository", "nameWithOwner")
-            collapse_single(pr, "assignees", "login")
-            collapse(pr, "comments")
-            for comment in pr.get("comments", []):
-                collapse_map(comment, "author", "login")
-            collapse(pr, "reviews")
-            for review in pr.get("reviews", []):
-                collapse_map(review, "author", "login")
-                collapse(review, "comments")
-
-            # Delete the old instance; add this instance
-            if not updateOld and number in refFile.prs.keys():
-                del refFile.prs[number]
-
-            if number in refFile.prs.keys():
-                refFile.prs[number].update(pr)
-            else:
-                refFile.prs[number] = pr
+            shapePR(pr)
+            refFile.prs[number] = pr
             refFile.canCopy = False
 
-        get_more_issues = prs["pageInfo"]["hasNextPage"]
-        issue_cursor = prs["pageInfo"]["endCursor"]
+        get_more = prs["pageInfo"]["hasNextPage"]
+        cursor = prs["pageInfo"]["endCursor"]
 
         # Stop paginating if we've caught up to the last download
-        if not updateOld and prs["nodes"] and refFile.lastSuccess:
+        if prs["nodes"] and refFile.lastSuccess:
             oldestRetrieved = dp.parse(prs["nodes"][-1]["updatedAt"])
             if oldestRetrieved < refFile.lastSuccess:
-                get_more_issues = False
+                get_more = False
+
+
+def backfillIssueFields(owner, repo, refFile, fields):
+    """Patch already-known issues with additional fields from a reduced
+    GraphQL fragment.
+
+    Used to upgrade legacy reference files whose issue entries predate
+    fields that later became part of the standard schema. There's no way
+    to filter for "issues missing field X", so this walks every issue in
+    the repo, but only merges data for numbers already present in
+    refFile.issues; unknown numbers are skipped, and existing fields not
+    covered by `fields` are left untouched.
+    """
+    cursor = None
+    get_more = True
+
+    while get_more:
+        query = gql_AllIssues_First if cursor is None else gql_AllIssues_Subsequent
+        variables = {"owner": owner, "repo": repo}
+        if cursor is not None:
+            variables["cursor"] = cursor
+
+        data = submit_query(query + fields, variables, "legacy issue fields")
+        issues = data["repository"]["issues"]
+
+        for issue in issues["nodes"]:
+            number = issue["number"]
+            if number not in refFile.issues:
+                continue
+            shapeIssue(issue)
+            refFile.issues[number].update(issue)
+            refFile.canCopy = False
+
+        get_more = issues["pageInfo"]["hasNextPage"]
+        cursor = issues["pageInfo"]["endCursor"]
+
+
+def backfillPRFields(owner, repo, refFile, fields):
+    """Patch already-known PRs with additional fields from a reduced
+    GraphQL fragment.
+
+    See backfillIssueFields() for why this walks every PR rather than
+    filtering, and why it merges instead of replacing.
+    """
+    cursor = None
+    get_more = True
+
+    while get_more:
+        query = gql_AllPRs_Initial if cursor is None else gql_AllPRs_Subsequent
+        variables = {"owner": owner, "repo": repo}
+        if cursor is not None:
+            variables["cursor"] = cursor
+
+        data = submit_query(query + fields, variables, "legacy PR fields")
+        prs = data["repository"]["pullRequests"]
+
+        for pr in prs["nodes"]:
+            number = pr["number"]
+            if number not in refFile.prs:
+                continue
+            shapePR(pr)
+            refFile.prs[number].update(pr)
+            refFile.canCopy = False
+
+        get_more = prs["pageInfo"]["hasNextPage"]
+        cursor = prs["pageInfo"]["endCursor"]
 
 
 def upgradeReference(reference):
@@ -703,13 +758,9 @@ def upgradeReference(reference):
             instructions = archive_reference.get_upgrade_instructions(reference.magic)
             owner, repo = reference.repo.split("/", 1)
             if instructions.issues:
-                getIssues(
-                    owner, repo, reference, fields=instructions.issues, updateOld=True
-                )
+                backfillIssueFields(owner, repo, reference, instructions.issues)
             if instructions.prs:
-                getPRs(
-                    owner, repo, reference, fields=instructions.prs, updateOld=True
-                )
+                backfillPRFields(owner, repo, reference, instructions.prs)
             reference.magic = instructions.result
     except Exception as exc:
         warnings.warn(f"Failed to upgrade reference file: {exc}")
