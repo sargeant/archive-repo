@@ -444,7 +444,7 @@ def submit_query(query, variables, display):
     global last_request_limit
     global next_reset_time
 
-    url = "https://api.github.com/graphql"
+    url = os.environ.get("GITHUB_GRAPHQL_URL", "https://api.github.com/graphql")
 
     bodyjson = {"query": re.sub(r"\s+", " ", query).strip()}
     if variables:
