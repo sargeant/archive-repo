@@ -465,10 +465,9 @@ def submit_query(query, variables, display):
             time.sleep(5)
             pass
 
-        if (
-            "errors" in result
-            and "type" in result["errors"]
-            and result["errors"]["type"] == "RATE_LIMITED"
+        if any(
+            isinstance(error, dict) and error.get("type") == "RATE_LIMITED"
+            for error in result.get("errors") or []
         ):
             # We're rate-limited; STALL
             if next_reset_time > datetime.now(timezone.utc):
