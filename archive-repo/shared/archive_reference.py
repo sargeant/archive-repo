@@ -114,9 +114,8 @@ def loadReference(filename, repo):
                     reference.issues_only = True
                     reference.prs = dict()
 
-        except:
-            warnings.warn("Unable to read input file; proceeding without it")
-            pass
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            warnings.warn(f"Unable to read input file; proceeding without it ({exc})")
 
     if not fileIsValid:
         return newReferenceFile()

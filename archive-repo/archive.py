@@ -455,15 +455,18 @@ def submit_query(query, variables, display):
     output += str(variables) if variables else "no parameters"
     log(output)
     result = dict()
+    last_error = None
 
     for _attempt in range(3):
         try:
             response = s.post(url, body)
             response.raise_for_status()
             result = response.json()
-        except:
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+            log(f"Request failed ({exc}); retrying in 5 seconds")
             time.sleep(5)
-            pass
+            continue
 
         if any(
             isinstance(error, dict) and error.get("type") == "RATE_LIMITED"
@@ -493,6 +496,9 @@ def submit_query(query, variables, display):
 
             del result["data"]["rateLimit"]
         return result["data"]
+
+    if last_error is not None:
+        raise RuntimeError(f"Request failed after retries: {last_error}") from last_error
 
     raise RuntimeError(result.get("errors", "Empty response"))
 
@@ -705,8 +711,8 @@ def upgradeReference(reference):
             if instructions.prs:
                 getPRs(reference, instructions.prs, True)
             reference.magic = instructions.result
-    except:
-        pass
+    except Exception as exc:
+        warnings.warn(f"Failed to upgrade reference file: {exc}")
 
     if not archive_reference.is_current_magic(reference.magic):
         warnings.warn(
