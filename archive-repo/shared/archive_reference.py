@@ -33,6 +33,26 @@ upgrades = {
 }
 
 
+def _validate_upgrade_chain():
+    "Fail fast at import time if an upgrade step doesn't chain to current_magic."
+    for start, instructions in upgrades.items():
+        seen = {start}
+        result = instructions.result
+        while result != current_magic:
+            if result not in upgrades:
+                raise AssertionError(
+                    f"Upgrade chain from magic {start!r} does not reach "
+                    f"current_magic {current_magic!r} (stuck at {result!r})"
+                )
+            if result in seen:
+                raise AssertionError(f"Upgrade chain from magic {start!r} cycles")
+            seen.add(result)
+            result = upgrades[result].result
+
+
+_validate_upgrade_chain()
+
+
 def get_current_magic():
     return current_magic
 
@@ -62,9 +82,10 @@ def get_upgrade_instructions(magic):
 ###############
 
 
-def newReferenceFile():
+def newReferenceFile(repo=None):
     return SimpleNamespace(
         magic=current_magic,
+        repo=repo,
         issues=dict(),
         prs=dict(),
         issues_only=True,
@@ -76,7 +97,7 @@ def newReferenceFile():
 
 def loadReference(filename, repo):
     fileIsValid = False
-    reference = newReferenceFile()
+    reference = newReferenceFile(repo)
     reference.filename = filename
 
     if filename:
@@ -114,11 +135,10 @@ def loadReference(filename, repo):
                     reference.issues_only = True
                     reference.prs = dict()
 
-        except:
-            warnings.warn("Unable to read input file; proceeding without it")
-            pass
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            warnings.warn(f"Unable to read input file; proceeding without it ({exc})")
 
     if not fileIsValid:
-        return newReferenceFile()
+        return newReferenceFile(repo)
 
     return reference

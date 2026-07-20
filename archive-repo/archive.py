@@ -701,19 +701,24 @@ def upgradeReference(reference):
     try:
         while archive_reference.is_legacy_magic(reference.magic):
             instructions = archive_reference.get_upgrade_instructions(reference.magic)
+            owner, repo = reference.repo.split("/", 1)
             if instructions.issues:
-                getIssues(reference, instructions.issues, True)
+                getIssues(
+                    owner, repo, reference, fields=instructions.issues, updateOld=True
+                )
             if instructions.prs:
-                getPRs(reference, instructions.prs, True)
+                getPRs(
+                    owner, repo, reference, fields=instructions.prs, updateOld=True
+                )
             reference.magic = instructions.result
-    except:
-        pass
+    except Exception as exc:
+        warnings.warn(f"Failed to upgrade reference file: {exc}")
 
     if not archive_reference.is_current_magic(reference.magic):
         warnings.warn(
             "Unable to upgrade input file to current version; proceeding without it"
         )
-        return archive_reference.newReferenceFile()
+        return archive_reference.newReferenceFile(reference.repo)
 
     return reference
 
